@@ -1,0 +1,163 @@
+local GuiMainMenuHandler = {}
+
+-- Services
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+-- Modules
+local LobbyFramework = require(script.Parent:WaitForChild("LobbyFrameWork"))
+
+-- Constants
+local ANIMATION_ID = "rbxassetid://77102932284879"
+local HOVER_COLOR = Color3.fromRGB(255, 255, 255)
+local BASE_COLOR = Color3.fromRGB(180, 180, 180)
+local BACK_HOVER_COLOR = Color3.fromRGB(121, 0, 0)
+local BACK_BASE_COLOR = Color3.fromRGB(255, 0, 0)
+local PARALLAX_MOVE_FACTOR = 0.0005
+local PARALLAX_MAX_POS = 0.5
+local CAMERA_TWEEN_DURATION = 1
+
+-- Instances (Lazy loaded where appropriate, but established at top for clarity)
+-- Note: Ensure these exist in the Workspace/ReplicatedStorage as expected
+local LobbyModel = Workspace:WaitForChild("LobbyModel")
+local MainLobby = LobbyModel:WaitForChild("MainLobby")
+
+-- Cameras
+local MainMenuCamera = MainLobby:WaitForChild("MainMenuCamera")
+local PlayCamera = MainLobby:WaitForChild("PlayMenuCamera")
+local CreditsCamera = MainLobby:WaitForChild("CreditsMenuCamera")
+local SelectionCamera = MainLobby:WaitForChild("GamemodeSelectionCamera")
+
+local currentCamera = Workspace.CurrentCamera
+
+-- UI Elements (SurfaceGuis in 3D space)
+local PlayButton = MainLobby:WaitForChild("PlayButton").SurfaceGui.TextButton
+local CreditsButton = MainLobby:WaitForChild("CreditsButton").SurfaceGui.TextButton
+
+local PlayGUIFrame = MainLobby:WaitForChild("PlayGUI"):WaitForChild("SurfaceGui"):WaitForChild("Frame")
+local PlayBackButton = PlayGUIFrame:WaitForChild("PlayBackButton")
+local FindMatchButton = PlayGUIFrame:WaitForChild("FindMatchButton")
+local CreateMatchButton = PlayGUIFrame:WaitForChild("CreateMatchButton")
+
+local CreditsGUIFrame = MainLobby:WaitForChild("CreditsGUI"):WaitForChild("SurfaceGui"):WaitForChild("Frame")
+local CreditsBackButton = CreditsGUIFrame:WaitForChild("CreditsBackButton")
+
+-- Assets
+local BeginningChar = ReplicatedStorage.Assets:WaitForChild("Char")
+local MatchEvent = ReplicatedStorage.Events.Bindables:WaitForChild("MatchGUI")
+
+local startCFrame = MainMenuCamera.CFrame
+
+--[=[
+    Creates a custom character for the lobby display.
+    Clones a dummy character and plays an idle animation.
+]=]
+local function MakeCharCustom(player: Player)
+    local charClone = BeginningChar:Clone()
+    if not charClone or not charClone:IsA("Model") then
+        warn("Failed to clone BeginningChar for lobby.")
+        return
+    end
+
+    charClone.Parent = MainLobby
+    
+    local humanoidDesc = Players:GetHumanoidDescriptionFromUserIdAsync(player.UserId)
+    
+    local humanoid = charClone:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid:ApplyDescriptionAsync(humanoidDesc) 
+        
+        local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+        local anim = Instance.new("Animation")
+        anim.AnimationId = ANIMATION_ID
+        
+        local track = animator:LoadAnimation(anim)
+        track:Play()
+        
+        anim:Destroy() 
+    end
+end
+
+--[=[
+    Initializes the Main Menu UI and Logic.
+    Sets up camera, parallax, hover effects, and button connections.
+]=]
+function GuiMainMenuHandler.init(player: Player)
+    -- Disable default ROBLOX controls and CoreGui for a clean menu experience
+    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+    
+    local PlayerModule = require(player:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
+    local Controls = PlayerModule:GetControls()
+    Controls:Disable()
+
+    -- Setup Character and Camera
+    MakeCharCustom(player)
+    LobbyFramework.SetupCamera(currentCamera, startCFrame)
+    LobbyFramework.StartParallaxLoop(player, currentCamera, PARALLAX_MOVE_FACTOR, PARALLAX_MAX_POS)
+
+    -- Bind Hover Effects
+    LobbyFramework.BindHover(FindMatchButton, HOVER_COLOR, BASE_COLOR)
+    LobbyFramework.BindHover(CreateMatchButton, HOVER_COLOR, BASE_COLOR)
+    LobbyFramework.BindHover(PlayButton, HOVER_COLOR, BASE_COLOR)
+    LobbyFramework.BindHover(CreditsButton, HOVER_COLOR, BASE_COLOR)
+    LobbyFramework.BindHover(PlayBackButton, BACK_HOVER_COLOR, BACK_BASE_COLOR)
+    LobbyFramework.BindHover(CreditsBackButton, BACK_HOVER_COLOR, BACK_BASE_COLOR)
+
+    -- Button Connections
+
+    -- Play Button -> Moves to Play Menu
+    PlayButton.MouseButton1Click:Connect(function()
+        MainMenuCamera.SpotLight.Enabled = false
+        PlayCamera.SpotLight.Enabled = true
+        LobbyFramework.TweenCameraTo(currentCamera, PlayCamera.CFrame, CAMERA_TWEEN_DURATION)
+    end)
+
+    -- Credits Button -> Moves to Credits Menu
+    CreditsButton.MouseButton1Click:Connect(function()
+        MainMenuCamera.SpotLight.Enabled = false
+        CreditsCamera.SpotLight.Enabled = true
+        LobbyFramework.TweenCameraTo(currentCamera, CreditsCamera.CFrame, CAMERA_TWEEN_DURATION)
+    end)
+
+    -- Find Match -> Moves to Selection & Fires Event
+    local isFinding = false
+    FindMatchButton.MouseButton1Click:Connect(function()
+        if isFinding then return end
+        isFinding = true
+        
+        LobbyFramework.TweenCameraTo(currentCamera, SelectionCamera.CFrame, CAMERA_TWEEN_DURATION)
+        MatchEvent:Fire(player, "Find")
+        
+        task.delay(2, function() isFinding = false end)
+    end)
+
+    -- Create Match -> Moves to Selection & Fires Event
+    local isCreating = false
+    CreateMatchButton.MouseButton1Click:Connect(function()
+        if isCreating then return end
+        isCreating = true
+        
+        LobbyFramework.TweenCameraTo(currentCamera, SelectionCamera.CFrame, CAMERA_TWEEN_DURATION)
+        MatchEvent:Fire(player, "Create")
+        
+        task.delay(2, function() isCreating = false end)
+    end)
+
+    -- Back from Play Menu -> Return to Main
+    PlayBackButton.MouseButton1Click:Connect(function()
+        MainMenuCamera.SpotLight.Enabled = true
+        PlayCamera.SpotLight.Enabled = false
+        LobbyFramework.TweenCameraTo(currentCamera, startCFrame, CAMERA_TWEEN_DURATION)
+    end)
+
+    -- Back from Credits Menu -> Return to Main
+    CreditsBackButton.MouseButton1Click:Connect(function()
+        MainMenuCamera.SpotLight.Enabled = true
+        CreditsCamera.SpotLight.Enabled = false
+        LobbyFramework.TweenCameraTo(currentCamera, startCFrame, CAMERA_TWEEN_DURATION)
+    end)
+end
+
+return GuiMainMenuHandler
