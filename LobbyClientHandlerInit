@@ -1,0 +1,17 @@
+--[[
+    LobbyClientHandlerInit
+    
+    Entry point for the client-side lobby system.
+    Initializes the main menu UI and match handling logic.
+]]
+
+-- Dependencies
+local GuiMainMenuHandler = require(script:WaitForChild("GuiMainMenuHandler"))
+local MatchHandler = require(script:WaitForChild("MatchHandling"))
+
+local Players = game:GetService("Players")
+local localPlayer = Players.LocalPlayer
+
+-- Initialize systems
+GuiMainMenuHandler.init(localPlayer)
+MatchHandler.Init()
